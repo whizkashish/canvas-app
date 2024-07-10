@@ -1,0 +1,497 @@
+{% extends "base.html" %}
+{% block styles %}
+<style>
+    #canvas {
+        border: 1px solid black;
+        cursor: default;
+    }
+    .object-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        padding: 5px;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
+    .text-input {
+        position: absolute;
+        display: none;
+        border: 1px solid black;
+        font-family: Arial, sans-serif;
+        padding: 5px;
+        resize: none;
+        z-index: 100;
+    }
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="container mt-3">
+    <div class="row">
+        <!-- Column 1: Buttons -->
+        <div class="col-md-3">
+            <input type="file" id="uploadPDF" class="btn-block mb-2" accept="application/pdf">
+            <button id="saveCanvas" class="btn btn-primary btn-block mb-2">Download</button>
+            <button id="clearCanvas" class="btn btn-primary btn-block mb-2">Clear Canvas</button>
+            <h3>stands List</h3>
+            <div id="object-list">
+                <!-- Object list items will be dynamically added by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Column 2: Canvas -->
+        <div class="col-md-9">
+            <div id="canvas-container">
+                <canvas id="canvas" ondrop="drop(event)" ondragover="allowDrop(event)"></canvas>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
+
+{% block footer-scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
+<!-- Your custom script -->
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const textInput = document.createElement('textarea');
+const objectList = document.getElementById('object-list');
+
+canvas.width = 800;
+canvas.height = 600;
+
+let objects = [];
+let selectedObject = null;
+let offsetX, offsetY;
+let isResizing = false;
+let resizeCornerSize = 10;
+
+let addingText = false;
+
+// PDF.js variables
+let pdfDoc = null,
+pageNum = 1,
+pageIsRendering = false,
+pageNumIsPending = null;
+
+// Allow dropping on the canvas
+function allowDrop(event) {
+    event.preventDefault();
+}
+
+// Handle drag event
+function drag(event,index) {
+    event.dataTransfer.setData("text", index);
+}
+
+// Handle drop event on the canvas
+function drop(event) {
+    event.preventDefault();
+    const index = event.dataTransfer.getData("text");
+    objects[index].x = event.offsetX;
+    objects[index].y = event.offsetY;
+    objects[index].isSelected = true;
+    objects[index].onCanvas = true;
+    objects.forEach(obj => obj.isSelected = false);
+    updateObjectList();
+    drawObjects();
+}
+{% for stand in stands %}
+    addObject(`{{stand.title}}`, {{stand.width}}, {{stand.height}})
+{% endfor %}
+// Function to add new objects
+function addObject(type, width, height) {
+    let obj = {
+        type: type,
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        width: width,
+        height: height,
+        color: 'lightgrey',
+        isSelected: false, // Initially selected
+        text: type,
+        label: type,
+        locked: false, // Initially unlocked
+        onCanvas:false
+    };
+
+    objects.forEach(obj => obj.isSelected = false); // Deselect all other objects
+    objects.push(obj);
+    updateObjectList();
+    drawObjects();
+}
+
+// Function to update the sidebar with object list
+function updateObjectList() {
+    objectList.innerHTML = '';
+    objects.forEach((obj, index) => {
+        if (obj.type === "Hall" || obj.type === "PDF") {
+            return; // Skip adding "Hall" and "Exhibition Ground" to the sidebar
+        }
+        let listItem = document.createElement('div');
+        listItem.className = 'object-item';
+        listItem.textContent = `${obj.label}`;
+        // Set draggable attribute
+        listItem.setAttribute('draggable', "true");
+        // Set ondragstart event listener (assuming you have a drag function named 'drag')
+        listItem.setAttribute('ondragstart',"drag(event,"+index+")");
+        let lockButton = document.createElement('button');
+        lockButton.textContent = obj.locked ? 'Unlock' : 'Lock';
+        lockButton.classList.add('btn', 'btn-sm', 'btn-primary', 'ml-2');
+        lockButton.addEventListener('click', () => toggleLock(index));
+        if(obj.onCanvas){
+            listItem.appendChild(lockButton);
+        }
+
+        let addButton = document.createElement('button');
+        addButton.textContent = 'Add';
+        addButton.classList.add('btn', 'btn-sm', 'btn-success', 'ml-2');
+        addButton.addEventListener('click', () => addObjectToCanvas(index));
+        
+        let removeButton = document.createElement('button');
+        removeButton.textContent = 'Remove';
+        removeButton.classList.add('btn', 'btn-sm', 'btn-danger', 'ml-2');
+        removeButton.addEventListener('click', () => deleteObject(index));
+        if(obj.onCanvas){
+            listItem.appendChild(removeButton);
+        }else{
+            listItem.appendChild(addButton);
+        }
+       
+        let addTextButton = document.createElement('button');
+        addTextButton.textContent = 'Add Text';
+        addTextButton.classList.add('btn', 'btn-sm', 'btn-info', 'ml-2');
+        addTextButton.addEventListener('click', () => {
+            addingText = true;
+            selectedObject = objects[index];
+            canvas.style.cursor = 'text';
+            handleTextInput(selectedObject.x, selectedObject.y);
+        });
+        if(obj.onCanvas){
+           listItem.appendChild(addTextButton);
+        }
+        
+        objectList.appendChild(listItem);
+    });
+}
+
+function addObjectToCanvas(index){
+    objects[index].onCanvas = true;
+    updateObjectList();
+    drawObjects();
+    console.log('Added');
+}
+
+// Function to toggle lock state of an object
+function toggleLock(index) {
+    objects[index].locked = !objects[index].locked;
+    updateObjectList();
+    drawObjects();
+}
+
+// Function to delete an object
+function deleteObject(index) {
+    objects[index].onCanvas = false;
+    updateObjectList();
+    drawObjects();
+    console.log('Removed');
+}
+
+// Function to draw all objects on the canvas
+function drawObjects() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    objects.forEach((obj) => {
+        
+            if (obj.type === 'PDF') {
+                // Draw PDF on the canvas
+                drawPDFOnMainCanvas(obj.pdfCanvas, obj.x, obj.y, obj.width, obj.height);
+            }else{
+                if (obj.onCanvas){
+                ctx.fillStyle = obj.color;
+                ctx.fillRect(obj.x, obj.y, obj.width, obj.height);
+                ctx.strokeStyle = obj.isSelected ? 'blue' : 'black';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+                if (obj.isSelected) {
+                    drawSelection(obj);
+                }
+                if (obj.text) {
+                    // Split text into multiple lines if it exceeds the object's width
+                    let textLines = splitTextIntoLines(obj.text, obj.width - 20); // Adjust padding as needed
+                    ctx.fillStyle = 'black';
+                    ctx.font = '14px Arial';
+                    let lineHeight = 20; // Adjust line height as needed
+                    textLines.forEach((line, i) => {
+                        ctx.fillText(line, obj.x + 10, obj.y + 20 + i * lineHeight, obj.width - 20);
+                    });
+                }
+                if (obj.isSelected) {
+                    // Draw name label
+                    ctx.fillStyle = 'black';
+                    ctx.fillRect(obj.x, obj.y - 20, obj.width, 20); // Rectangle for label
+                    ctx.fillStyle = 'white';
+                    ctx.fillText(obj.label, obj.x + 10, obj.y - 5); // Label text
+                }
+
+              } 
+            }
+          
+    });
+}
+
+// Function to draw selection border
+function drawSelection(obj) {
+    ctx.strokeStyle = 'blue';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(obj.x, obj.y, obj.width, obj.height);
+    // Draw resize corner
+    ctx.fillStyle = 'blue';
+    ctx.fillRect(obj.x + obj.width - resizeCornerSize, obj.y + obj.height - resizeCornerSize, resizeCornerSize, resizeCornerSize);
+}
+
+// Function to check if a point is inside a rectangle
+function isInsideRect(x, y, rect) {
+    return x > rect.x && x < rect.x + rect.width && y > rect.y && y < rect.y + rect.height;
+}
+
+// Function to check if a point is inside the resize corner
+function isInsideResizeCorner(x, y, rect) {
+    return x > rect.x + rect.width - resizeCornerSize && x < rect.x + rect.width &&
+        y > rect.y + rect.height - resizeCornerSize && y < rect.y + rect.height;
+}
+
+// Function to split text into lines respecting line breaks and max width
+// Function to split text into lines respecting line breaks and max width
+function splitTextIntoLines(text, maxWidth) {
+let lines = [];
+let paragraphs = text.split('\n'); // Split by explicit line breaks (\n)
+
+paragraphs.forEach((paragraph, index) => {
+let words = paragraph.split(/\s+/); // Split each paragraph by spaces to handle word wrapping
+let currentLine = '';
+
+words.forEach(word => {
+    let testLine = currentLine + (currentLine ? ' ' : '') + word;
+    let testWidth = ctx.measureText(testLine).width;
+
+    if (testWidth > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+    } else {
+        currentLine = testLine;
+    }
+});
+
+if (currentLine) {
+    lines.push(currentLine);
+}
+
+});
+
+return lines;
+}
+
+// Mouse down event to select and resize objects
+canvas.addEventListener('mousedown', (e) => {
+if (addingText && selectedObject) {
+handleTextInput(e.clientX, e.clientY); // Finalize text input
+addingText = false;
+return;
+}
+console.log('mousedown');
+const mouseX = e.offsetX;
+const mouseY = e.offsetY;
+for (let i = objects.length - 1; i >= 0; i--) {
+let obj = objects[i];
+if (obj.locked) continue;
+if (isInsideResizeCorner(mouseX, mouseY, obj) && obj.onCanvas) {
+    console.log('isInsideResizeCorner');
+    console.log(obj)
+    selectedObject = obj;
+    isResizing = true;
+    offsetX = mouseX - obj.x;
+    offsetY = mouseY - obj.y;
+    return;
+} else if (isInsideRect(mouseX, mouseY, obj) && obj.onCanvas) {
+    objects.forEach(o => o.isSelected = false); // Deselect all other objects
+    console.log('isInsideRect');
+    console.log(obj)
+    selectedObject = obj;
+    offsetX = mouseX - obj.x;
+    offsetY = mouseY - obj.y;
+    obj.isSelected = true;  // Select the object
+    drawObjects();
+    return;
+}
+}
+selectedObject = null;
+drawObjects();
+});
+
+// Mouse move event to drag and resize objects
+canvas.addEventListener('mousemove', (e) => {
+    if (selectedObject && !selectedObject.locked && !addingText) {
+        const mouseX = e.offsetX;
+        const mouseY = e.offsetY;
+        if (isResizing) {
+            selectedObject.width = mouseX - selectedObject.x;
+            selectedObject.height = mouseY - selectedObject.y;
+        } else {
+            selectedObject.x = mouseX - offsetX;
+            selectedObject.y = mouseY - offsetY;
+        }
+        drawObjects();
+    }
+});
+
+// Handle mouse up event
+canvas.addEventListener('mouseup', () => {
+if (addingText && selectedObject) {
+    handleTextInput(e.clientX, e.clientY); // Finalize text input
+    addingText = false;
+    selectedObject.locked = true; // Lock the object after text input
+    canvas.style.cursor = 'default';
+} else {
+    selectedObject = null;
+    isResizing = false;
+}
+drawObjects();
+});
+
+// Handle text input for the selected object
+function handleTextInput() {
+if (selectedObject && !selectedObject.locked) {
+    selectedObject.locked = true; // Lock the object
+    textInput.style.left = `${selectedObject.x + canvas.getBoundingClientRect().left}px`;
+    textInput.style.top = `${selectedObject.y + canvas.getBoundingClientRect().top}px`;
+    textInput.style.width = `${selectedObject.width}px`;
+    textInput.style.height = `${selectedObject.height}px`;
+    textInput.style.display = 'block';
+    textInput.value = selectedObject.text;
+    textInput.focus();
+    textInput.oninput = () => {
+        // Update selectedObject text with line breaks
+        let lines = splitTextIntoLines(textInput.value, selectedObject.width - 20); // Adjust padding as needed
+        selectedObject.text = lines.join('\n');
+    };
+    textInput.onblur = () => {
+        selectedObject.locked = false; // Unlock the object after text input
+        textInput.style.display = 'none';
+        drawObjects();
+    };
+}
+}
+
+// Load canvas from localStorage
+function loadCanvas() {
+const savedObjects = localStorage.getItem('canvasObjects');
+if (savedObjects) {
+    objects = JSON.parse(savedObjects);
+    drawObjects();
+    updateObjectList();
+} 
+}
+
+function saveCanvas() {
+const dataURL = canvas.toDataURL('image/png');
+const link = document.createElement('a');
+link.href = dataURL;
+link.download = 'canvas.png';
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+}
+
+document.getElementById('uploadPDF').addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (file) {
+        const fileReader = new FileReader();
+        fileReader.onload = function (e) {
+            const typedarray = new Uint8Array(e.target.result);
+            pdfjsLib.getDocument(typedarray).promise.then(function (pdfDoc_) {
+                pdfDoc = pdfDoc_;
+                renderPage(pageNum, addPDFObject);
+            });
+        };
+        fileReader.readAsArrayBuffer(file);
+    }
+});
+
+// Render PDF page
+function renderPage(num, callback) {
+    pageIsRendering = true;
+
+    // Get page
+    pdfDoc.getPage(num).then(page => {
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+        };
+
+        page.render(renderContext).promise.then(() => {
+            pageIsRendering = false;
+
+            if (pageNumIsPending !== null) {
+                renderPage(pageNumIsPending);
+                pageNumIsPending = null;
+            }
+
+            // Callback to add the PDF object
+            if (callback) {
+                callback(canvas);
+            }
+        });
+    });
+}
+
+// Add PDF object to canvas
+function addPDFObject(pdfCanvas) {
+    const pdfObject = {
+        type: 'PDF',
+        x: 0,
+        y: 0,
+        width: canvas.width,
+        height: canvas.height,
+        pdfCanvas: pdfCanvas,
+        locked: true // Initially locked
+    };
+    objects.unshift(pdfObject);
+    drawObjects();
+    updateObjectList();
+}
+
+// Draw PDF on the main canvas
+function drawPDFOnMainCanvas(pdfCanvas, x, y, width, height) {
+    ctx.drawImage(pdfCanvas, x, y, width, height);
+}
+
+document.getElementById('saveCanvas').addEventListener('click', () => {
+objects.forEach(obj => obj.isSelected = false);
+drawObjects();
+saveCanvas();
+});
+document.getElementById('clearCanvas').addEventListener('click', () => {
+    localStorage.setItem('canvasObjects', '');
+    objects.forEach(obj => obj.onCanvas = false);
+    drawObjects();
+    updateObjectList();
+});
+window.onload = () => {
+loadCanvas();
+};
+
+// Append textarea to body for text input handling
+document.body.appendChild(textInput);
+textInput.classList.add('text-input');
+</script>
+{% endblock %}

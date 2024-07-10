@@ -1,0 +1,33 @@
+# Ignore the virtual environment
+venv/
+__pycache__/
+*.py[cod]
+*.log
+*.sqlite3-journal
+
+# Ignore the local SQLite database
+#db.sqlite3
+*.pyc
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ignore the local settings file
+local_settings.py
+
+# Ignore IDE/editor files
+.idea/
+.vscode/
+*.swp
