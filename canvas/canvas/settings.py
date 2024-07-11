@@ -25,8 +25,14 @@ SECRET_KEY = 'django-insecure-1nnxvk5w-29vlrjum&9lf0m9d&rc#q19!i2t^h7lm$c6cm0^5*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["canvas-app-bkk0.onrender.com"]
+# Add your Render domain to allowed hosts
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'canvas-app-bkk0.onrender.com']
 
+# Update the CSRF trusted origins
+CSRF_TRUSTED_ORIGINS = ['https://canvas-app-bkk0.onrender.com']
+
+# Ensure this is set to True in production for security reasons
+CSRF_COOKIE_SECURE = True
 
 # Application definition
 
