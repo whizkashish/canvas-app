@@ -362,6 +362,86 @@ if (addingText && selectedObject) {
 drawObjects();
 });
 
+// Add event listeners for touch events
+canvas.addEventListener('touchstart', handleTouchStart);
+canvas.addEventListener('touchmove', handleTouchMove);
+canvas.addEventListener('touchend', handleTouchEnd);
+
+// Handle touch start
+function handleTouchStart(event) {
+    const touch = event.touches[0];
+    if (addingText && selectedObject) {
+    handleTextInput(touch.clientX, touch.clientY); // Finalize text input
+    addingText = false;
+    return;
+    }
+    console.log('touchstart');
+    const touchX = touch.clientX - canvas.getBoundingClientRect().left;
+    const touchY = touch.clientY - canvas.getBoundingClientRect().top;
+    for (let i = objects.length - 1; i >= 0; i--) {
+        let obj = objects[i];
+        if (obj.locked) continue;
+            if (isInsideResizeCorner(touchX, touchY, obj) && obj.onCanvas) {
+                console.log('isInsideResizeCorner');
+                console.log(obj)
+                selectedObject = obj;
+                isResizing = true;
+                offsetX = touchX - obj.x;
+                offsetY = touchY - obj.y;
+                return;
+            } else if (isInsideRect(touchX, touchY, obj) && obj.onCanvas) {
+                objects.forEach(o => o.isSelected = false); // Deselect all other objects
+                console.log('isInsideRect');
+                console.log(obj)
+                selectedObject = obj;
+                offsetX = touchX - obj.x;
+                offsetY = touchY - obj.y;
+                obj.isSelected = true;  // Select the object
+                drawObjects();
+                return;
+            }
+            
+    }
+
+}
+
+// Handle touch move
+function handleTouchMove(event) {
+    
+    const touch = event.touches[0];
+
+    if (selectedObject && !selectedObject.locked && !addingText) {
+        const touchX = touch.clientX - canvas.getBoundingClientRect().left;
+        const touchY = touch.clientY - canvas.getBoundingClientRect().top;
+        if (isResizing) {
+            selectedObject.width = touchX - selectedObject.x;
+            selectedObject.height = touchY - selectedObject.y;
+        } else {
+            selectedObject.x = touchX - offsetX;
+            selectedObject.y = touchY - offsetY;
+        }
+        console.log(touchX);
+        console.log(touchY);
+        drawObjects();
+    }
+}
+
+// Handle touch end
+function handleTouchEnd() {
+    selectedObject = null;
+    drawObjects();    
+    if (addingText && selectedObject) {
+        handleTextInput(e.clientX, e.clientY); // Finalize text input
+        addingText = false;
+        selectedObject.locked = true; // Lock the object after text input
+        canvas.style.cursor = 'default';
+    } else {
+        selectedObject = null;
+        isResizing = false;
+    }
+    console.log('touchend');
+    drawObjects();
+}
 // Handle text input for the selected object
 function handleTextInput() {
 if (selectedObject && !selectedObject.locked) {
